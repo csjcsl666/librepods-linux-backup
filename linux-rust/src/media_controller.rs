@@ -54,8 +54,7 @@ struct MediaControllerState {
     // setting the card profile to off is persisted by WirePlumber and can leave the
     // headset without an audio card after reconnecting, so it is never done by default
     allow_profile_off: bool,
-    conv_original_volume: Option<u32>,
-    conv_conversation_started: bool,
+    volume_duck: Option<crate::volume_duck::DuckSession>,
     playback_listener_running: bool,
 }
 
@@ -73,8 +72,7 @@ impl MediaControllerState {
             ear_detection_enabled: true,
             disconnect_when_not_wearing: true,
             allow_profile_off: false,
-            conv_original_volume: None,
-            conv_conversation_started: false,
+            volume_duck: None,
             playback_listener_running: false,
         }
     }
@@ -588,6 +586,12 @@ impl MediaController {
     pub async fn handle_conversational_awareness(&self, status: u8) {
         debug!("Entering handle_conversational_awareness with status: {}", status);
 
+        if matches!(status, 4 | 6 | 7) {
+            debug!("Conversation end ({}), restoring volume if needed", status);
+            self.restore_ducked_volume().await;
+            return;
+        }
+
         let mac = self.state.lock().await.connected_device_mac.clone();
         if mac.is_empty() {
             debug!("No connected device MAC, skipping conversational awareness");
@@ -605,103 +609,60 @@ impl MediaController {
             }
         };
 
-        let current_volume_opt = tokio::task::spawn_blocking({
+        let current = tokio::task::spawn_blocking({
             let sink = sink.clone();
             move || get_sink_volume_percent_by_name_sync(&sink)
         })
-            .await
-            .unwrap_or(None);
+        .await
+        .unwrap_or(None);
 
-        match status {
-            1 => {
-                let original = current_volume_opt.unwrap_or(0);
-                debug!("Conversation start (1). Current volume: {}", original);
-                {
-                    let mut state = self.state.lock().await;
-                    if !state.conv_conversation_started {
-                        state.conv_original_volume = Some(original);
-                        state.conv_conversation_started = true;
-                    } else {
-                        debug!(
-                            "Conversation already started; not overwriting conv_original_volume"
-                        );
-                    }
-                }
-                if original > 25 {
-                    let sink_clone = sink.clone();
-                    tokio::task::spawn_blocking(move || transition_sink_volume(&sink_clone, 25))
-                        .await
-                        .unwrap_or(false);
-                    info!(
-                        "Conversation start: lowered volume to 25% (original {})",
-                        original
-                    );
-                } else {
-                    debug!("Original volume {} <= 25, not reducing to 25", original);
-                }
-            }
-            2 => {
-                let original = self.state.lock().await.conv_original_volume;
-                if let Some(orig) = original {
-                    debug!("Conversation reduce (2). Original: {}", orig);
-                    if orig > 15 {
-                        let sink_clone = sink.clone();
-                        tokio::task::spawn_blocking(move || {
-                            transition_sink_volume(&sink_clone, 15)
-                        })
-                            .await
-                            .unwrap_or(false);
-                        info!(
-                            "Conversation reduce: lowered volume to 15% (original {})",
-                            orig
-                        );
-                    } else {
-                        debug!("Original {} <= 15, not reducing to 15", orig);
-                    }
-                } else {
-                    debug!("No original volume known for status 2, skipping");
-                }
-            }
-            3 => {
-                let (conv_started, conv_original) = {
-                    let state = self.state.lock().await;
-                    (state.conv_conversation_started, state.conv_original_volume)
-                };
-                if !conv_started {
-                    debug!("Received status 3 but conversation was not started; ignoring increase");
-                    return;
-                }
-                if let Some(orig) = conv_original {
-                    let target = orig.min(25);
-                    let sink_clone = sink.clone();
-                    tokio::task::spawn_blocking(move || transition_sink_volume(&sink_clone, target))
-                        .await
-                        .unwrap_or(false);
-                    info!(
-                        "Conversation partial increase (3): set volume to {} (original {})",
-                        target, orig
-                    );
-                } else if let Some(orig_from_current) = current_volume_opt {
-                    let target = orig_from_current.min(25);
-                    let sink_clone = sink.clone();
-                    tokio::task::spawn_blocking(move || transition_sink_volume(&sink_clone, target))
-                        .await
-                        .unwrap_or(false);
-                    info!(
-                        "Conversation partial increase (3) with fallback current: set volume to {} (measured {})",
-                        target, orig_from_current
-                    );
-                } else {
-                    debug!("No original volume known for status 3, skipping");
-                }
-            }
-            4 | 6 | 7 => {
-                debug!("Conversation end ({}), restoring volume if needed", status);
-                self.restore_volume_if_needed(&sink).await;
-            }
+        // 1 conversation started, 2 louder conversation, 3 partial increase, 4 6 7 ended
+        let (target, may_start) = match status {
+            1 | 3 => (25, status == 1),
+            2 => (15, false),
             _ => {
                 debug!("Conversation status ({}), ignoring", status);
+                return;
             }
+        };
+
+        let new_volume = {
+            let mut state = self.state.lock().await;
+            let planned = crate::volume_duck::plan_duck(current, &mut state.volume_duck, &sink, target, may_start);
+            crate::volume_duck::save(&state.volume_duck);
+            planned
+        };
+        if let Some(volume) = new_volume {
+            let sink_clone = sink.clone();
+            tokio::task::spawn_blocking(move || transition_sink_volume(&sink_clone, volume))
+                .await
+                .unwrap_or(false);
+            info!("Conversation status {}: set volume to {}%", status, volume);
+        }
+    }
+
+    // Restore a lowered volume after a conversation, disconnect or lost ownership
+    pub async fn restore_ducked_volume(&self) {
+        let session = self.state.lock().await.volume_duck.clone();
+        let Some(s) = session else { return };
+        let sink = s.sink.clone();
+        let current = tokio::task::spawn_blocking({
+            let sink = sink.clone();
+            move || get_sink_volume_percent_by_name_sync(&sink)
+        })
+        .await
+        .unwrap_or(None);
+        let planned = {
+            let mut state = self.state.lock().await;
+            let planned = crate::volume_duck::plan_restore(current, &mut state.volume_duck);
+            crate::volume_duck::save(&state.volume_duck);
+            planned
+        };
+        if let Some(volume) = planned {
+            tokio::task::spawn_blocking(move || transition_sink_volume(&sink, volume))
+                .await
+                .unwrap_or(false);
+            info!("Restored volume to {}%", volume);
         }
     }
 
@@ -750,27 +711,6 @@ impl MediaController {
         })
             .await
             .unwrap();
-    }
-
-    async fn restore_volume_if_needed(&self, sink: &str) {
-        let maybe_original = {
-            let mut state = self.state.lock().await;
-            if state.conv_conversation_started {
-                let orig = state.conv_original_volume;
-                state.conv_original_volume = None;
-                state.conv_conversation_started = false;
-                orig
-            } else {
-                return;
-            }
-        };
-
-        if let Some(orig) = maybe_original {
-            let sink = sink.to_string();
-            tokio::task::spawn_blocking(move || transition_sink_volume(&sink, orig))
-                .await
-                .unwrap_or(false);
-        }
     }
 
     fn list_mpris_services(conn: &Connection) -> Vec<String> {
@@ -853,7 +793,7 @@ fn get_card_info_list_sync() -> Vec<OwnedCardInfo> {
     Rc::try_unwrap(cards).unwrap().into_inner()
 }
 
-fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
+pub(crate) fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
     let (mut mainloop, context) = pulse_connect()?;
     let introspector = context.introspect();
     let sink_info: Rc<RefCell<Option<OwnedSinkInfo>>> = Rc::new(RefCell::new(None));
@@ -904,7 +844,7 @@ fn set_card_profile_sync(card_index: u32, profile_name: &str) -> bool {
     result
 }
 
-pub fn transition_sink_volume(sink_name: &str, target_volume: u32) -> bool {
+pub(crate) fn transition_sink_volume(sink_name: &str, target_volume: u32) -> bool {
     let (mut mainloop, context) = match pulse_connect() {
         Some(c) => c,
         None => return false,

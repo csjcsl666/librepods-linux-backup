@@ -1,6 +1,7 @@
 mod bluetooth;
 mod devices;
 mod media_controller;
+mod volume_duck;
 mod ui;
 mod utils;
 
@@ -76,6 +77,7 @@ fn main() -> iced::Result {
         };
     }
     env_logger::init();
+    std::thread::spawn(volume_duck::restore_blocking);
 
     let (ui_tx, ui_rx) = unbounded_channel::<BluetoothUIMessage>();
 
@@ -274,6 +276,7 @@ async fn async_main(
             return true;
         };
         if is_connected==0 {
+            std::thread::spawn(volume_duck::restore_blocking);
             if let Err(e) = ui_tx.send(BluetoothUIMessage::DeviceDisconnected(addr_str.clone())) {
                 warn!("Failed to send DeviceConnected UI message: {:?}", e);
             }
@@ -281,6 +284,10 @@ async fn async_main(
         }
         if managed_devices_mac.contains(&addr_str) {
             info!("Managed device connected: {}, initializing", addr_str);
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                volume_duck::restore_blocking();
+            });
             let type_ = devices_list.get(&addr_str).unwrap().type_.clone();
             if type_ == devices::enums::DeviceType::Nothing {
                 let ui_tx_clone = ui_tx.clone();

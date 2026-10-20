@@ -223,6 +223,7 @@ impl AirPodsDevice {
                     let controller = mc_clone_owns.lock().await;
                     controller.pause_all_media().await;
                     controller.deactivate_a2dp_profile().await;
+                    controller.restore_ducked_volume().await;
                 }
             }
         });
@@ -349,6 +350,7 @@ impl AirPodsDevice {
                         let controller = mc_clone.lock().await;
                         controller.pause_all_media().await;
                         controller.deactivate_a2dp_profile().await;
+                    controller.restore_ducked_volume().await;
                     }
                     AACPEvent::StemPress(press_type, bud_type) => {
                         use crate::bluetooth::aacp::StemPressType;
