@@ -1,3 +1,4 @@
+use crate::i18n::{Msg, tr};
 use crate::bluetooth::aacp::BatteryInfo;
 use crate::devices::airpods::AirPodsInformation;
 use crate::devices::nothing::NothingInformation;
@@ -71,10 +72,10 @@ pub enum AirPodsNoiseControlMode {
 impl Display for AirPodsNoiseControlMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AirPodsNoiseControlMode::Off => write!(f, "Off"),
-            AirPodsNoiseControlMode::NoiseCancellation => write!(f, "Noise Cancellation"),
-            AirPodsNoiseControlMode::Transparency => write!(f, "Transparency"),
-            AirPodsNoiseControlMode::Adaptive => write!(f, "Adaptive"),
+            AirPodsNoiseControlMode::Off => write!(f, "{}", tr(Msg::ModeOff)),
+            AirPodsNoiseControlMode::NoiseCancellation => write!(f, "{}", tr(Msg::ModeNoiseCancellation)),
+            AirPodsNoiseControlMode::Transparency => write!(f, "{}", tr(Msg::ModeTransparency)),
+            AirPodsNoiseControlMode::Adaptive => write!(f, "{}", tr(Msg::ModeAdaptive)),
         }
     }
 }
@@ -118,12 +119,12 @@ pub enum NothingAncMode {
 impl Display for NothingAncMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NothingAncMode::Off => write!(f, "Off"),
-            NothingAncMode::LowNoiseCancellation => write!(f, "Low Noise Cancellation"),
-            NothingAncMode::MidNoiseCancellation => write!(f, "Mid Noise Cancellation"),
-            NothingAncMode::HighNoiseCancellation => write!(f, "High Noise Cancellation"),
-            NothingAncMode::AdaptiveNoiseCancellation => write!(f, "Adaptive Noise Cancellation"),
-            NothingAncMode::Transparency => write!(f, "Transparency"),
+            NothingAncMode::Off => write!(f, "{}", tr(Msg::ModeOff)),
+            NothingAncMode::LowNoiseCancellation => write!(f, "{}", tr(Msg::ModeLowNoiseCancellation)),
+            NothingAncMode::MidNoiseCancellation => write!(f, "{}", tr(Msg::ModeMidNoiseCancellation)),
+            NothingAncMode::HighNoiseCancellation => write!(f, "{}", tr(Msg::ModeHighNoiseCancellation)),
+            NothingAncMode::AdaptiveNoiseCancellation => write!(f, "{}", tr(Msg::ModeAdaptiveNoiseCancellation)),
+            NothingAncMode::Transparency => write!(f, "{}", tr(Msg::ModeTransparency)),
         }
     }
 }

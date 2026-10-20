@@ -1,3 +1,4 @@
+use crate::i18n::{Msg, tr, tr_with};
 use crate::bluetooth::aacp::{AACPManager, ControlCommandIdentifiers};
 use iced::Alignment::End;
 use iced::border::Radius;
@@ -31,7 +32,7 @@ pub fn airpods_view<'a>(
     let rename_input = container(
         row![
             Space::new().width(10),
-            text("Name").size(16).style(|theme: &Theme| {
+            text(tr(Msg::Name)).size(16).style(|theme: &Theme| {
                 let mut style = text::Style::default();
                 style.color = Some(theme.palette().text);
                 style
@@ -94,7 +95,7 @@ pub fn airpods_view<'a>(
 
     let listening_mode = container(
         row![
-            text("Listening Mode").size(16).style(|theme: &Theme| {
+            text(tr(Msg::ListeningMode)).size(16).style(|theme: &Theme| {
                 let mut style = text::Style::default();
                 style.color = Some(theme.palette().text);
                 style
@@ -106,7 +107,7 @@ pub fn airpods_view<'a>(
                 // this combo_box doesn't go really well with the design, but I am not writing my own dropdown menu for this
                 combo_box(
                     &state.noise_control_state,
-                    "Select Listening Mode",
+                    &tr(Msg::SelectListeningMode),
                     Some(&state.noise_control_mode.clone()),
                     {
                         let aacp_manager = aacp_manager.clone();
@@ -185,7 +186,7 @@ pub fn airpods_view<'a>(
 
     let audio_settings_col = column![
         container(
-            text("Audio Settings").size(18).style(
+            text(tr(Msg::AudioSettings)).size(18).style(
                 |theme: &Theme| {
                     let mut style = text::Style::default();
                     style.color = Some(theme.palette().primary);
@@ -206,8 +207,8 @@ pub fn airpods_view<'a>(
                     let aacp_manager_pv = aacp_manager.clone();
                     row![
                         column![
-                            text("Personalized Volume").size(16),
-                            text("Adjusts the volume in response to your environment.").size(12).style(
+                            text(tr(Msg::PersonalizedVolume)).size(16),
+                            text(tr(Msg::PersonalizedVolumeDesc)).size(12).style(
                                 |theme: &Theme| {
                                     let mut style = text::Style::default();
                                     style.color = Some(theme.palette().text.scale_alpha(0.7));
@@ -257,8 +258,8 @@ pub fn airpods_view<'a>(
                     let aacp_manager_conv_detect = aacp_manager.clone();
                     row![
                         column![
-                            text("Conversation Awareness").size(16),
-                            text("Lowers the volume of your audio when it detects that you are speaking.").size(12).style(
+                            text(tr(Msg::ConversationAwareness)).size(16),
+                            text(tr(Msg::ConversationAwarenessDesc)).size(12).style(
                                 |theme: &Theme| {
                                     let mut style = text::Style::default();
                                     style.color = Some(theme.palette().text.scale_alpha(0.7));
@@ -314,8 +315,8 @@ pub fn airpods_view<'a>(
         let mac = mac.clone();
         container(row![
             column![
-                text("Off Listening Mode").size(16),
-                text("When this is on, AirPods listening modes will include an Off option. Loud sound levels are not reduced when listening mode is set to Off.").size(12).style(
+                text(tr(Msg::OffListeningMode)).size(16),
+                text(tr(Msg::OffListeningModeDesc)).size(12).style(
                     |theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text.scale_alpha(0.7));
@@ -367,7 +368,7 @@ pub fn airpods_view<'a>(
         if let Some(DeviceInformation::AirPods(ref airpods_info)) = device.information {
             let info_rows = column![
                 row![
-                    text("Model Number").size(16).style(|theme: &Theme| {
+                    text(tr(Msg::ModelNumber)).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -376,7 +377,7 @@ pub fn airpods_view<'a>(
                     text(airpods_info.model_number.clone()).size(16)
                 ],
                 row![
-                    text("Manufacturer").size(16).style(|theme: &Theme| {
+                    text(tr(Msg::Manufacturer)).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -385,7 +386,7 @@ pub fn airpods_view<'a>(
                     text(airpods_info.manufacturer.clone()).size(16)
                 ],
                 row![
-                    text("Serial Number").size(16).style(|theme: &Theme| {
+                    text(tr(Msg::SerialNumber)).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -402,7 +403,7 @@ pub fn airpods_view<'a>(
                         .on_press(Message::CopyToClipboard(airpods_info.serial_number.clone()))
                 ],
                 row![
-                    text("Left Serial Number").size(16).style(|theme: &Theme| {
+                    text(tr(Msg::LeftSerialNumber)).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -421,7 +422,7 @@ pub fn airpods_view<'a>(
                         ))
                 ],
                 row![
-                    text("Right Serial Number").size(16).style(|theme: &Theme| {
+                    text(tr(Msg::RightSerialNumber)).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -440,7 +441,7 @@ pub fn airpods_view<'a>(
                         ))
                 ],
                 row![
-                    text("Version 1").size(16).style(|theme: &Theme| {
+                    text(tr_with(Msg::VersionLabel, &[("n", "1")])).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -449,7 +450,7 @@ pub fn airpods_view<'a>(
                     text(airpods_info.version1.clone()).size(16)
                 ],
                 row![
-                    text("Version 2").size(16).style(|theme: &Theme| {
+                    text(tr_with(Msg::VersionLabel, &[("n", "2")])).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -458,7 +459,7 @@ pub fn airpods_view<'a>(
                     text(airpods_info.version2.clone()).size(16)
                 ],
                 row![
-                    text("Version 3").size(16).style(|theme: &Theme| {
+                    text(tr_with(Msg::VersionLabel, &[("n", "3")])).size(16).style(|theme: &Theme| {
                         let mut style = text::Style::default();
                         style.color = Some(theme.palette().text);
                         style
@@ -471,7 +472,7 @@ pub fn airpods_view<'a>(
             .padding(8);
 
             information_col = column![
-                container(text("Device Information").size(18).style(|theme: &Theme| {
+                container(text(tr(Msg::DeviceInformation)).size(18).style(|theme: &Theme| {
                     let mut style = text::Style::default();
                     style.color = Some(theme.palette().primary);
                     style

@@ -1,3 +1,4 @@
+use crate::i18n::{self, LangSetting, Msg, tr};
 use crate::bluetooth::aacp::{
     AACPEvent, BatteryComponent, BatteryStatus, ControlCommandIdentifiers,
 };
@@ -16,7 +17,7 @@ use iced::overlay::menu;
 use iced::widget::button::Style;
 use iced::widget::rule::FillMode;
 use iced::widget::{
-    Space, button, column, combo_box, container, pane_grid, row, rule, scrollable, text,
+    Space, button, column, combo_box, container, pane_grid, pick_list, row, rule, scrollable, text,
     text_input, toggler
 };
 use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, window, Settings, Program};
@@ -108,6 +109,7 @@ pub enum Message {
     StateChanged(String, DeviceState),
     TrayTextModeChanged(bool), // yes, I know I should add all settings to a struct, but I'm lazy
     StemControlChanged(bool),
+    LanguageSelected(LangSetting),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -253,6 +255,7 @@ impl App {
                     "theme": self.selected_theme,
                     "tray_text_mode": self.tray_text_mode,
                     "stem_control": self.stem_control,
+                    "language": i18n::setting().as_str(),
                 });
                 debug!(
                     "Writing settings to {}: {}",
@@ -342,7 +345,7 @@ impl App {
                                     devices_list
                                         .get(&mac)
                                         .map(|d| d.name.clone())
-                                        .unwrap_or_else(|| "Unknown Device".to_string())
+                                        .unwrap_or_else(|| tr(Msg::UnknownDevice))
                                 };
                                 self.device_states.insert(mac.clone(), DeviceState::AirPods(AirPodsState {
                                     device_name,
@@ -631,6 +634,24 @@ impl App {
                     "theme": self.selected_theme,
                     "tray_text_mode": self.tray_text_mode,
                     "stem_control": self.stem_control,
+                    "language": i18n::setting().as_str(),
+                });
+                debug!(
+                    "Writing settings to {}: {}",
+                    app_settings_path.to_str().unwrap(),
+                    settings
+                );
+                std::fs::write(app_settings_path, settings.to_string()).ok();
+                Task::none()
+            }
+            Message::LanguageSelected(selected) => {
+                i18n::set_setting(selected);
+                let app_settings_path = get_app_settings_path();
+                let settings = serde_json::json!({
+                    "theme": self.selected_theme,
+                    "tray_text_mode": self.tray_text_mode,
+                    "stem_control": self.stem_control,
+                    "language": i18n::setting().as_str(),
                 });
                 debug!(
                     "Writing settings to {}: {}",
@@ -647,6 +668,7 @@ impl App {
                     "theme": self.selected_theme,
                     "tray_text_mode": self.tray_text_mode,
                     "stem_control": self.stem_control,
+                    "language": i18n::setting().as_str(),
                 });
                 debug!(
                     "Writing settings to {}: {}",
@@ -716,7 +738,7 @@ impl App {
                                                 )
                                             }
                                         }
-                                        _ => "Connected".to_string(),
+                                        _ => tr(Msg::Connected),
                                     }
                                 } else {
                                     mac_addr.to_string()
@@ -752,7 +774,7 @@ impl App {
                     };
 
                     let create_settings_button = || -> Element<'_, Message> {
-                        let label = "Settings".to_string();
+                        let label = tr(Msg::Settings);
                         let is_selected = self.selected_tab == Tab::Settings;
                         let col = column![text(label).size(16)];
                         let content = container(col)
@@ -801,7 +823,7 @@ impl App {
 
                     let content = column![
                         row![
-                            text("Devices").size(18),
+                            text(tr(Msg::Devices)).size(18),
                             // Removing until I actually add support for devices other than AirPods
                             // Space::new().width(Length::Fill),
                             // button(
@@ -856,7 +878,7 @@ impl App {
                         Tab::Device(id) => {
                             if id == "none" {
                                 container(
-                                    text("Select a device".to_string()).size(16)
+                                    text(tr(Msg::SelectDevice)).size(16)
                                 )
                                     .center_x(Length::Fill)
                                     .center_y(Length::Fill)
@@ -883,7 +905,7 @@ impl App {
                                             }
                                         }).unwrap_or_else(|| {
                                             container(
-                                                text("Required managers or state not available for this AirPods device").size(16)
+                                                text(tr(Msg::ErrAirpodsNoManagers)).size(16)
                                             )
                                                 .center_x(Length::Fill)
                                                 .center_y(Length::Fill)
@@ -897,7 +919,7 @@ impl App {
                                                 } else {
                                                     error!("No ATT manager found for Nothing device {}", id);
                                                     container(
-                                                        text("No valid ATT manager found for this Nothing device").size(16)
+                                                        text(tr(Msg::ErrNothingNoAtt)).size(16)
                                                     )
                                                         .center_x(Length::Fill)
                                                         .center_y(Length::Fill)
@@ -905,21 +927,21 @@ impl App {
                                             } else {
                                                 error!("No manager found for Nothing device {}", id);
                                                 container(
-                                                    text("No manager found for this Nothing device").size(16)
+                                                    text(tr(Msg::ErrNothingNoManager)).size(16)
                                                 )
                                                     .center_x(Length::Fill)
                                                     .center_y(Length::Fill)
                                             }
                                         } else {
                                             container(
-                                                text("No state available for this Nothing device").size(16)
+                                                text(tr(Msg::ErrNothingNoState)).size(16)
                                             )
                                                 .center_x(Length::Fill)
                                                 .center_y(Length::Fill)
                                         }
                                     }
                                     _ => {
-                                        container(text("Unsupported device").size(16))
+                                        container(text(tr(Msg::UnsupportedDevice)).size(16))
                                             .center_x(Length::Fill)
                                             .center_y(Length::Fill)
                                     }
@@ -930,8 +952,8 @@ impl App {
                             let tray_text_mode_toggle = container(
                                 row![
                                     column![
-                                        text("Use text in tray").size(16),
-                                        text("Use text for battery status in tray instead of a progress bar.").size(12).style(
+                                        text(tr(Msg::UseTextInTray)).size(16),
+                                        text(tr(Msg::UseTextInTrayDesc)).size(12).style(
                                             |theme: &Theme| {
                                                 let mut style = text::Style::default();
                                                 style.color = Some(theme.palette().text.scale_alpha(0.7));
@@ -969,7 +991,7 @@ impl App {
 
                             let appearance_settings_col = column![
                                 container(
-                                    text("Appearance").size(20).style(
+                                    text(tr(Msg::Appearance)).size(20).style(
                                         |theme: &Theme| {
                                             let mut style = text::Style::default();
                                             style.color = Some(theme.palette().primary);
@@ -985,12 +1007,12 @@ impl App {
                                 }),
                                 container(
                                     row![
-                                        text("Theme")
+                                        text(tr(Msg::Theme))
                                             .size(16),
                                         Space::new().width(Length::Fill),
                                         combo_box(
                                             &self.theme_state,
-                                            "Select theme",
+                                            &tr(Msg::SelectTheme),
                                             Some(&self.selected_theme),
                                             Message::ThemeSelected
                                         )
@@ -1051,6 +1073,43 @@ impl App {
                                             style.border = border.rounded(16);
                                             style
                                         }
+                                    ),
+                                container(
+                                    row![
+                                        text(tr(Msg::Language))
+                                            .size(16),
+                                        Space::new().width(Length::Fill),
+                                        pick_list(
+                                            LangSetting::ALL,
+                                            Some(i18n::setting()),
+                                            Message::LanguageSelected
+                                        )
+                                        .placeholder(tr(Msg::SelectLanguage))
+                                        .padding(Padding{
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 10.0,
+                                            right: 10.0,
+                                        })
+                                        .width(Length::from(200))
+                                    ]
+                                    .align_y(Center)
+                                )
+                                    .padding(Padding{
+                                        top: 5.0,
+                                        bottom: 5.0,
+                                        left: 18.0,
+                                        right: 18.0,
+                                    })
+                                    .style(
+                                        |theme: &Theme| {
+                                            let mut style = container::Style::default();
+                                            style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                            let mut border = Border::default();
+                                            border.color = theme.palette().primary.scale_alpha(0.5);
+                                            style.border = border.rounded(16);
+                                            style
+                                        }
                                     )
                                 ]
                                 .spacing(12);
@@ -1059,8 +1118,8 @@ impl App {
                             let stem_control_toggle = container(
                                 row![
                                     column![
-                                        text("Stem press track control").size(16),
-                                        text("Double press = next track, triple press = previous track. Disable if your environment handles AirPods AVRCP commands natively.").size(12).style(
+                                        text(tr(Msg::StemControl)).size(16),
+                                        text(tr(Msg::StemControlDesc)).size(12).style(
                                             |theme: &Theme| {
                                                 let mut style = text::Style::default();
                                                 style.color = Some(theme.palette().text.scale_alpha(0.7));
@@ -1098,7 +1157,7 @@ impl App {
 
                             let controls_settings_col = column![
                                 container(
-                                    text("Controls").size(20).style(
+                                    text(tr(Msg::Controls)).size(20).style(
                                         |theme: &Theme| {
                                             let mut style = text::Style::default();
                                             style.color = Some(theme.palette().primary);
@@ -1132,7 +1191,7 @@ impl App {
                         Tab::AddDevice => {
                             container(
                                 column![
-                                    text("Pick a paired device to add:").size(18),
+                                    text(tr(Msg::PickPairedDevice)).size(18),
                                     Space::new().height(Length::from(10)),
                                     {
                                         let mut list_col = column![].spacing(12);
@@ -1149,7 +1208,7 @@ impl App {
                                                 if !matches!(&self.pending_add_device, Some((_, addr)) if addr == &device.1) {
                                                     row_elements.push(
                                                         button(
-                                                            text("Add").size(14).width(120).align_y(Center).align_x(Center)
+                                                            text(tr(Msg::Add)).size(14).width(120).align_y(Center).align_x(Center)
                                                         )
                                                             .style(
                                                                 |theme: &Theme, _status| {
@@ -1175,11 +1234,11 @@ impl App {
                                                     && pending_addr == &device.1 {
                                                         item_col = item_col.push(
                                                             row![
-                                                                text("Device Type:").size(16),
+                                                                text(tr(Msg::DeviceType)).size(16),
                                                                 Space::new().width(Length::Fill),
                                                                 combo_box(
                                                                     &self.device_type_state,
-                                                                    "Select device type",
+                                                                    &tr(Msg::SelectDeviceType),
                                                                     self.selected_device_type.as_ref(),
                                                                     Message::SelectDeviceType
                                                                 )
@@ -1221,7 +1280,7 @@ impl App {
                                                         item_col = item_col.push(
                                                             row![
                                                                 Space::new().width(Length::Fill),
-                                                                button(text("Cancel").size(16).width(Length::Fill).center())
+                                                                button(text(tr(Msg::Cancel)).size(16).width(Length::Fill).center())
                                                                     .on_press(Message::CancelAddDevice)
                                                                     .style(|theme: &Theme, _status| {
                                                                         let mut style = Style::default();
@@ -1233,7 +1292,7 @@ impl App {
                                                                     .width(Length::from(120))
                                                                     .padding(4),
                                                                 Space::new().width(Length::from(20)),
-                                                                button(text("Add Device").size(16).width(Length::Fill).center())
+                                                                button(text(tr(Msg::AddDevice)).size(16).width(Length::Fill).center())
                                                                     .on_press(Message::ConfirmAddDevice)
                                                                     .style(|theme: &Theme, _status| {
                                                                         let mut style = Style::default();
@@ -1268,7 +1327,7 @@ impl App {
                                         if self.paired_devices.iter().all(|device| devices_list.contains_key(&device.1.to_string())) && self.pending_add_device.is_none() {
                                             list_col = list_col.push(
                                                 container(
-                                                    text("No new paired devices found. All paired devices are already added.").size(16)
+                                                    text(tr(Msg::NoNewPairedDevices)).size(16)
                                                 )
                                                 .width(Length::Fill)
                                             );

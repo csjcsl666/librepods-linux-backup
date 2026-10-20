@@ -1,3 +1,4 @@
+use crate::i18n::{Msg, tr};
 use crate::bluetooth::att::{ATTHandles, ATTManager};
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceState, NothingState};
 use crate::ui::window::Message;
@@ -24,14 +25,14 @@ pub fn nothing_view<'a>(
         && let Some(DeviceInformation::Nothing(ref nothing_info)) = device.information
     {
         information_col = information_col
-            .push(text("Device Information").size(18).style(|theme: &Theme| {
+            .push(text(tr(Msg::DeviceInformation)).size(18).style(|theme: &Theme| {
                 let mut style = text::Style::default();
                 style.color = Some(theme.palette().primary);
                 style
             }))
             .push(Space::new().height(iced::Length::from(10)))
             .push(iced::widget::row![
-                text("Serial Number").size(16).style(|theme: &Theme| {
+                text(tr(Msg::SerialNumber)).size(16).style(|theme: &Theme| {
                     let mut style = text::Style::default();
                     style.color = Some(theme.palette().text);
                     style
@@ -40,7 +41,7 @@ pub fn nothing_view<'a>(
                 text(nothing_info.serial_number.clone()).size(16)
             ])
             .push(iced::widget::row![
-                text("Firmware Version").size(16).style(|theme: &Theme| {
+                text(tr(Msg::FirmwareVersion)).size(16).style(|theme: &Theme| {
                     let mut style = text::Style::default();
                     style.color = Some(theme.palette().text);
                     style
@@ -52,7 +53,7 @@ pub fn nothing_view<'a>(
 
     let noise_control_mode = container(
         row![
-            text("Noise Control Mode").size(16).style(|theme: &Theme| {
+            text(tr(Msg::NoiseControlMode)).size(16).style(|theme: &Theme| {
                 let mut style = text::Style::default();
                 style.color = Some(theme.palette().text);
                 style
@@ -64,7 +65,7 @@ pub fn nothing_view<'a>(
                 let att_manager_clone = att_manager.clone();
                 combo_box(
                     &state.anc_mode_state,
-                    "Select Noise Control Mode",
+                    &tr(Msg::SelectNoiseControlMode),
                     Some(&state.anc_mode.clone()),
                     {
                         move |selected_mode| {

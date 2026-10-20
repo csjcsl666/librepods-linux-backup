@@ -1,5 +1,7 @@
 // use ksni::TrayMethods; // provides the spawn method
 
+use crate::i18n::{Msg, tr};
+
 use ab_glyph::{Font, ScaleFont};
 use ksni::{Icon, ToolTip};
 use tokio::sync::mpsc::UnboundedSender;
@@ -95,14 +97,14 @@ impl ksni::Tray for MyTray {
                 }
             };
 
-        let l = format_component("L", self.battery_l, self.battery_l_status);
-        let r = format_component("R", self.battery_r, self.battery_r_status);
-        let c = format_component("C", self.battery_c, self.battery_c_status);
+        let l = format_component(&tr(Msg::BatteryShortLeft), self.battery_l, self.battery_l_status);
+        let r = format_component(&tr(Msg::BatteryShortRight), self.battery_r, self.battery_r_status);
+        let c = format_component(&tr(Msg::BatteryShortCase), self.battery_c, self.battery_c_status);
 
         ToolTip {
             icon_name: "".to_string(),
             icon_pixmap: vec![],
-            title: "Battery Status".to_string(),
+            title: tr(Msg::TrayBatteryStatus),
             description: format!("{} {} {}", l, r, c),
         }
     }
@@ -111,16 +113,16 @@ impl ksni::Tray for MyTray {
         let allow_off = self.allow_off_option == Some(0x01);
         let options = if allow_off {
             vec![
-                ("Off", 0x01),
-                ("Noise Cancellation", 0x02),
-                ("Transparency", 0x03),
-                ("Adaptive", 0x04),
+                (tr(Msg::ModeOff), 0x01),
+                (tr(Msg::ModeNoiseCancellation), 0x02),
+                (tr(Msg::ModeTransparency), 0x03),
+                (tr(Msg::ModeAdaptive), 0x04),
             ]
         } else {
             vec![
-                ("Noise Cancellation", 0x02),
-                ("Transparency", 0x03),
-                ("Adaptive", 0x04),
+                (tr(Msg::ModeNoiseCancellation), 0x02),
+                (tr(Msg::ModeTransparency), 0x03),
+                (tr(Msg::ModeAdaptive), 0x04),
             ]
         };
         let selected = self
@@ -130,7 +132,7 @@ impl ksni::Tray for MyTray {
         let options_clone = options.clone();
         vec![
             StandardItem {
-                label: "Open Window".into(),
+                label: tr(Msg::TrayOpenWindow),
                 icon_name: "window-new".into(),
                 activate: Box::new(|this: &mut Self| {
                     if let Some(tx) = &this.ui_tx {
@@ -163,7 +165,7 @@ impl ksni::Tray for MyTray {
             .into(),
             MenuItem::Separator,
             CheckmarkItem {
-                label: "Conversation Detection".into(),
+                label: tr(Msg::TrayConversationDetection),
                 checked: self.conversation_detect_enabled.unwrap_or(false),
                 enabled: self.conversation_detect_enabled.is_some(),
                 activate: Box::new(|this: &mut Self| {
@@ -183,7 +185,7 @@ impl ksni::Tray for MyTray {
             }
             .into(),
             StandardItem {
-                label: "Exit".into(),
+                label: tr(Msg::TrayExit),
                 icon_name: "application-exit".into(),
                 activate: Box::new(|_| {
                     crate::volume_duck::restore_blocking();

@@ -2,6 +2,7 @@ mod bluetooth;
 mod devices;
 mod media_controller;
 mod volume_duck;
+mod i18n;
 mod ui;
 mod utils;
 
@@ -77,6 +78,15 @@ fn main() -> iced::Result {
         };
     }
     env_logger::init();
+    let saved_language = std::fs::read_to_string(utils::get_app_settings_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("language").and_then(|l| l.as_str().map(str::to_owned)));
+    i18n::set_setting(
+        saved_language
+            .map(|l| i18n::LangSetting::parse(&l))
+            .unwrap_or(i18n::LangSetting::Auto),
+    );
     std::thread::spawn(volume_duck::restore_blocking);
 
     let (ui_tx, ui_rx) = unbounded_channel::<BluetoothUIMessage>();
@@ -148,6 +158,14 @@ async fn async_main(
             ui_tx: Some(ui_tx.clone()),
         };
         let handle = tray.spawn().await.unwrap();
+        // rebuild the tray menu when the language is changed in the settings
+        let language_handle = handle.clone();
+        let mut language_rx = i18n::subscribe();
+        tokio::spawn(async move {
+            while language_rx.changed().await.is_ok() {
+                language_handle.update(|_| {}).await;
+            }
+        });
         Some(handle)
     };
 
