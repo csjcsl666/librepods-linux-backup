@@ -305,6 +305,7 @@ impl App {
                         if !already_connected {
                             self.bluetooth_state.connected_devices.push(mac.clone());
                         }
+                        self.selected_tab = tab_after_connect(&self.selected_tab, &mac);
 
                         // self.device_states.insert(mac.clone(), DeviceState::AirPods(AirPodsState {
                         //     conversation_awareness_enabled: false,
@@ -1397,3 +1398,34 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
 //
 //     devices
 // }
+
+// Select a device that connects when no device is selected, never move away from a tab the user opened
+fn tab_after_connect(current: &Tab, mac: &str) -> Tab {
+    match current {
+        Tab::Device(selected) if selected == "none" => Tab::Device(mac.to_string()),
+        other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selects_the_connected_device_when_nothing_is_selected() {
+        assert_eq!(
+            tab_after_connect(&Tab::Device("none".to_string()), "AA"),
+            Tab::Device("AA".to_string())
+        );
+    }
+
+    #[test]
+    fn keeps_the_tab_the_user_is_on() {
+        assert_eq!(tab_after_connect(&Tab::Settings, "AA"), Tab::Settings);
+        assert_eq!(
+            tab_after_connect(&Tab::Device("BB".to_string()), "AA"),
+            Tab::Device("BB".to_string())
+        );
+        assert_eq!(tab_after_connect(&Tab::AddDevice, "AA"), Tab::AddDevice);
+    }
+}

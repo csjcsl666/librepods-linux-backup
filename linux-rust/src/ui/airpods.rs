@@ -1,5 +1,5 @@
 use crate::i18n::{Msg, tr, tr_with};
-use crate::bluetooth::aacp::{AACPManager, ControlCommandIdentifiers};
+use crate::bluetooth::aacp::{AACPManager, BatteryComponent, BatteryInfo, BatteryStatus, ControlCommandIdentifiers};
 use iced::Alignment::End;
 use iced::border::Radius;
 use iced::overlay::menu;
@@ -508,8 +508,53 @@ pub fn airpods_view<'a>(
         }
     }
 
+    let battery_rows = battery_lines(&state.battery, &tr(Msg::Charging));
+    let battery_col = if battery_rows.is_empty() {
+        column![]
+    } else {
+        let mut rows = column![].spacing(4).padding(8);
+        for (label, value) in battery_rows {
+            rows = rows.push(row![
+                text(tr(label)).size(16),
+                Space::new().width(Length::Fill),
+                text(value).size(16)
+            ]);
+        }
+        column![
+            container(text(tr(Msg::Battery)).size(18).style(|theme: &Theme| {
+                let mut style = text::Style::default();
+                style.color = Some(theme.palette().primary);
+                style
+            }))
+            .padding(Padding {
+                top: 5.0,
+                bottom: 5.0,
+                left: 18.0,
+                right: 18.0,
+            }),
+            container(rows)
+                .padding(Padding {
+                    top: 5.0,
+                    bottom: 5.0,
+                    left: 10.0,
+                    right: 10.0,
+                })
+                .style(|theme: &Theme| {
+                    let mut style = container::Style::default();
+                    style.background =
+                        Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                    let mut border = Border::default();
+                    border.color = theme.palette().primary.scale_alpha(0.5);
+                    style.border = border.rounded(16);
+                    style
+                })
+        ]
+    };
+
     container(column![
         rename_input,
+        Space::new().height(Length::from(20)),
+        battery_col,
         Space::new().height(Length::from(20)),
         listening_mode,
         Space::new().height(Length::from(20)),
@@ -532,4 +577,68 @@ where
         let rt = Runtime::new().unwrap();
         rt.block_on(fut);
     });
+}
+
+// Rows for the battery section: left bud, right bud and case, in that order. Components the
+// device does not report are left out, a disconnected component is shown as a dash.
+fn battery_lines(info: &[BatteryInfo], charging_label: &str) -> Vec<(Msg, String)> {
+    [
+        (BatteryComponent::Left, Msg::BatteryLeft),
+        (BatteryComponent::Right, Msg::BatteryRight),
+        (BatteryComponent::Case, Msg::BatteryCase),
+    ]
+    .into_iter()
+    .filter_map(|(component, label)| {
+        let item = info.iter().find(|i| i.component == component)?;
+        let value = match item.status {
+            BatteryStatus::Disconnected => "\u{2014}".to_string(),
+            BatteryStatus::Charging => format!("{}% \u{00b7} {}", item.level, charging_label),
+            BatteryStatus::NotCharging => format!("{}%", item.level),
+        };
+        Some((label, value))
+    })
+    .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(component: BatteryComponent, level: u8, status: BatteryStatus) -> BatteryInfo {
+        BatteryInfo { component, level, status }
+    }
+
+    #[test]
+    fn lists_left_right_case_in_order_with_charging() {
+        let data = vec![
+            info(BatteryComponent::Case, 40, BatteryStatus::Charging),
+            info(BatteryComponent::Right, 93, BatteryStatus::NotCharging),
+            info(BatteryComponent::Left, 94, BatteryStatus::NotCharging),
+        ];
+        let lines = battery_lines(&data, "Charging");
+        assert_eq!(
+            lines,
+            vec![
+                (Msg::BatteryLeft, "94%".to_string()),
+                (Msg::BatteryRight, "93%".to_string()),
+                (Msg::BatteryCase, "40% \u{00b7} Charging".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn disconnected_component_is_a_dash_and_missing_ones_are_omitted() {
+        let data = vec![
+            info(BatteryComponent::Left, 80, BatteryStatus::NotCharging),
+            info(BatteryComponent::Case, 0, BatteryStatus::Disconnected),
+        ];
+        let lines = battery_lines(&data, "Charging");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1], (Msg::BatteryCase, "\u{2014}".to_string()));
+    }
+
+    #[test]
+    fn no_data_gives_no_rows() {
+        assert!(battery_lines(&[], "Charging").is_empty());
+    }
 }

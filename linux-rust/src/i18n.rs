@@ -89,6 +89,11 @@ messages! {
     BatteryShortRight => "battery_short_right",
     BatteryShortCase => "battery_short_case",
     Add => "add",
+    Battery => "battery",
+    BatteryLeft => "battery_left",
+    BatteryRight => "battery_right",
+    BatteryCase => "battery_case",
+    Charging => "charging",
     VersionLabel => "version_label",
 }
 

@@ -63,5 +63,10 @@
   "battery_short_right": "右",
   "battery_short_case": "盒",
   "add": "添加",
-  "version_label": "版本 {n}"
+  "version_label": "版本 {n}",
+  "battery": "电池电量",
+  "battery_left": "左耳",
+  "battery_right": "右耳",
+  "battery_case": "充电盒",
+  "charging": "正在充电"
 }

@@ -63,5 +63,10 @@
   "battery_short_right": "R",
   "battery_short_case": "C",
   "add": "Add",
-  "version_label": "Version {n}"
+  "version_label": "Version {n}",
+  "battery": "Battery",
+  "battery_left": "Left",
+  "battery_right": "Right",
+  "battery_case": "Case",
+  "charging": "Charging"
 }
