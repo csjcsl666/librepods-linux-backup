@@ -23,6 +23,12 @@ serde_json = "1.0"
 aes = "0.9.0-rc.4"
 futures = "0.3.32"
 
+[features]
+# 默认构建不会写入蓝牙音频 profile 或 codec，也不会让 WirePlumber 持久化它们
+# 该功能只保留历史实现，不得加入 default，也不得在发布或日常构建中启用
+default = []
+audio-profile-control = []
+
 [profile.release]
 opt-level = "s"
 lto = true

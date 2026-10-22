@@ -3,6 +3,8 @@ mod devices;
 mod media_controller;
 mod volume_duck;
 mod i18n;
+#[cfg(test)]
+mod freeze_guard;
 mod ui;
 mod utils;
 

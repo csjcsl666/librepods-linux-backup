@@ -13,13 +13,19 @@ use libpulse_binding::proplist::Proplist;
 use libpulse_binding::volume::{ChannelVolumes, Volume};
 use log::{debug, error, info, warn};
 use std::cell::RefCell;
-use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+// Audio profile and codec writes are frozen. LibrePods never changes the card profile on its own,
+// so the codec chosen by the system (AAC, SBC-XQ or anything else) is left alone and nothing is
+// persisted by WirePlumber. The code that can write a profile only exists with the
+// `audio-profile-control` feature, which is not part of the default build.
+pub const PROFILE_CONTROL_ENABLED: bool = cfg!(feature = "audio-profile-control");
+
 #[derive(Clone, Debug)]
+#[cfg_attr(not(any(test, feature = "audio-profile-control")), allow(dead_code))]
 struct OwnedCardProfileInfo {
     name: Option<String>,
     priority: u32,
@@ -30,6 +36,7 @@ struct OwnedCardInfo {
     index: u32,
     proplist: Proplist,
     profiles: Vec<OwnedCardProfileInfo>,
+    #[cfg_attr(not(any(test, feature = "audio-profile-control")), allow(dead_code))]
     active_profile: Option<String>,
 }
 
@@ -53,6 +60,7 @@ struct MediaControllerState {
     disconnect_when_not_wearing: bool,
     // setting the card profile to off is persisted by WirePlumber and can leave the
     // headset without an audio card after reconnecting, so it is never done by default
+    #[cfg_attr(not(feature = "audio-profile-control"), allow(dead_code))]
     allow_profile_off: bool,
     volume_duck: Option<crate::volume_duck::DuckSession>,
     playback_listener_running: bool,
@@ -303,6 +311,12 @@ impl MediaController {
         }
     }
 
+    #[cfg(not(feature = "audio-profile-control"))]
+    pub async fn activate_a2dp_profile(&self) {
+        debug!("Audio profile control is frozen, leaving the card profile and codec untouched");
+    }
+
+    #[cfg(feature = "audio-profile-control")]
     pub async fn activate_a2dp_profile(&self) {
         debug!("Entering activate_a2dp_profile");
         let state = self.state.lock().await;
@@ -519,6 +533,7 @@ impl MediaController {
         self.mpris_command("Previous").await;
     }
 
+    #[cfg(feature = "audio-profile-control")]
     async fn get_audio_device_index(&self, mac: &str) -> Option<u32> {
         if mac.is_empty() {
             return None;
@@ -541,6 +556,12 @@ impl MediaController {
             .unwrap_or(None)
     }
 
+    #[cfg(not(feature = "audio-profile-control"))]
+    pub async fn deactivate_a2dp_profile(&self) {
+        debug!("Audio profile control is frozen, not touching the card profile");
+    }
+
+    #[cfg(feature = "audio-profile-control")]
     pub async fn deactivate_a2dp_profile(&self) {
         debug!("Entering deactivate_a2dp_profile");
         if !self.state.lock().await.allow_profile_off {
@@ -825,6 +846,7 @@ pub(crate) fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u3
     Some(percent)
 }
 
+#[cfg(feature = "audio-profile-control")]
 fn set_card_profile_sync(card_index: u32, profile_name: &str) -> bool {
     let (mut mainloop, context) = match pulse_connect() {
         Some(c) => c,
@@ -942,6 +964,7 @@ async fn get_sink_name_by_mac(mac: &str) -> Option<String> {
         .await
         .unwrap_or(None)
 }
+#[cfg(any(test, feature = "audio-profile-control"))]
 #[derive(Debug, PartialEq, Eq)]
 enum A2dpAction {
     KeepCurrent,
@@ -949,9 +972,9 @@ enum A2dpAction {
     Unavailable,
 }
 
-// Respect whatever A2DP profile (and therefore codec) WirePlumber already selected.
-// Only when the card is not on an A2DP profile, pick the available A2DP profile with the
-// highest priority, which is the order the audio server itself prefers.
+// Historical implementation, only compiled with the `audio-profile-control` feature and in tests.
+// It never switches between A2DP profiles, so AAC, SBC-XQ and SBC are all left as negotiated.
+#[cfg(any(test, feature = "audio-profile-control"))]
 fn plan_a2dp_activation(active: Option<&str>, profiles: &[OwnedCardProfileInfo]) -> A2dpAction {
     if active.is_some_and(|n| n.starts_with("a2dp-sink")) {
         return A2dpAction::KeepCurrent;
@@ -1022,5 +1045,57 @@ mod tests {
             plan_a2dp_activation(Some("off"), &profiles),
             A2dpAction::Activate("a2dp-sink-sbc".to_string())
         );
+    }
+
+    // The default build must not be able to write a card profile in any direction
+
+    const EVENTS: [&str; 6] = ["startup", "connect", "reconnect", "in_ear", "out_of_ear", "playback_started"];
+
+    #[test]
+    fn profile_control_is_frozen_in_the_default_build() {
+        #[cfg(not(feature = "audio-profile-control"))]
+        assert!(!PROFILE_CONTROL_ENABLED);
+    }
+
+    #[test]
+    fn default_cargo_features_do_not_enable_profile_control() {
+        let manifest = include_str!("../Cargo.toml");
+        let features = manifest.split("[features]").nth(1).expect("features section");
+        let features = features.split("\n[").next().unwrap();
+        let default_line = features.lines().find(|l| l.trim_start().starts_with("default")).expect("default line");
+        assert!(!default_line.contains("audio-profile-control"), "{}", default_line);
+    }
+
+    // activate runs on connect, in-ear and playback start, deactivate on out-of-ear and lost ownership
+    #[cfg(not(feature = "audio-profile-control"))]
+    #[tokio::test]
+    async fn no_event_looks_up_or_writes_the_card_profile() {
+        for event in EVENTS {
+            let controller = MediaController::new("AA:BB:CC:DD:EE:FF".to_string(), "11:22:33:44:55:66".to_string());
+            match event {
+                "out_of_ear" => controller.deactivate_a2dp_profile().await,
+                _ => controller.activate_a2dp_profile().await,
+            }
+            let state = controller.state.lock().await;
+            assert!(state.device_index.is_none(), "{} touched the audio card", event);
+        }
+    }
+
+    #[test]
+    fn planner_never_switches_between_a2dp_codecs_in_either_direction() {
+        // priorities arranged both ways so neither AAC nor SBC-XQ is favoured
+        for (aac, xq, sbc) in [(134, 132, 133), (130, 135, 133), (133, 133, 133)] {
+            let profiles = vec![
+                profile("off", 0),
+                profile("a2dp-sink", aac),
+                profile("a2dp-sink-sbc_xq", xq),
+                profile("a2dp-sink-sbc", sbc),
+            ];
+            for active in ["a2dp-sink", "a2dp-sink-sbc_xq", "a2dp-sink-sbc"] {
+                for _event in EVENTS {
+                    assert_eq!(plan_a2dp_activation(Some(active), &profiles), A2dpAction::KeepCurrent, "{}", active);
+                }
+            }
+        }
     }
 }
