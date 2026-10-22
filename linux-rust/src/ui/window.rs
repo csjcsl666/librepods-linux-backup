@@ -142,10 +142,7 @@ impl App {
         let (window, open_task) = if start_minimized {
             (None, Task::none())
         } else {
-            let mut settings = window::Settings::default();
-            settings.min_size = Some(Size::new(400.0, 300.0));
-            settings.icon = window::icon::from_file("../../assets/icon.png").ok();
-            let (id, open) = window::open(settings);
+            let (id, open) = window::open(new_window_settings());
             (Some(id), open.map(Message::WindowOpened))
         };
 
@@ -280,10 +277,7 @@ impl App {
                         if let Some(window_id) = self.window {
                             Task::batch(vec![window::gain_focus(window_id), wait_task])
                         } else {
-                            let mut settings = window::Settings::default();
-                            settings.min_size = Some(Size::new(400.0, 300.0));
-                            settings.icon = window::icon::from_file("../../assets/icon.png").ok();
-                            let (new_window_task, open_task) = window::open(settings);
+                            let (new_window_task, open_task) = window::open(new_window_settings());
                             self.window = Some(new_window_task);
                             Task::batch(vec![open_task.map(Message::WindowOpened), wait_task])
                         }
@@ -1399,6 +1393,18 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
 //     devices
 // }
 
+// Wayland app_id of the window. It has to match the desktop entry (librepods.desktop), otherwise the
+// dock and the bar cannot find the app icon and show an empty app name
+const APP_ID: &str = "librepods";
+
+fn new_window_settings() -> window::Settings {
+    let mut settings = window::Settings::default();
+    settings.min_size = Some(Size::new(400.0, 300.0));
+    settings.icon = window::icon::from_file("../../assets/icon.png").ok();
+    settings.platform_specific.application_id = APP_ID.to_string();
+    settings
+}
+
 // Select a device that connects when no device is selected, never move away from a tab the user opened
 fn tab_after_connect(current: &Tab, mac: &str) -> Tab {
     match current {
@@ -1410,6 +1416,12 @@ fn tab_after_connect(current: &Tab, mac: &str) -> Tab {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_has_the_app_id_of_the_desktop_entry() {
+        assert_eq!(new_window_settings().platform_specific.application_id, "librepods");
+        assert_eq!(new_window_settings().min_size, Some(Size::new(400.0, 300.0)));
+    }
 
     #[test]
     fn selects_the_connected_device_when_nothing_is_selected() {
