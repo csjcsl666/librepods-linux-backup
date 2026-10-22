@@ -198,10 +198,44 @@ impl ksni::Tray for MyTray {
     }
 }
 
-fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
-    use ab_glyph::{FontRef, PxScale};
-    use image::{ImageBuffer, Rgba};
+// Text size that fits `max_width`, never larger than `max_scale`. A three digit level such as 100
+// does not fit at the full size and was cut off at the edges of the icon.
+fn fit_scale(font: &ab_glyph::FontRef, text: &str, max_width: f32, max_scale: f32) -> f32 {
+    use ab_glyph::{Font, ScaleFont};
+    let at_max = font.as_scaled(ab_glyph::PxScale::from(max_scale));
+    let width: f32 = text.chars().map(|c| at_max.h_advance(font.glyph_id(c))).sum();
+    if width <= max_width || width <= 0.0 {
+        max_scale
+    } else {
+        max_scale * max_width / width
+    }
+}
+
+fn draw_centered_text(
+    img: &mut image::RgbaImage,
+    font: &ab_glyph::FontRef,
+    text: &str,
+    color: image::Rgba<u8>,
+    max_width: f32,
+    max_scale: f32,
+) {
+    use ab_glyph::{Font, PxScale, ScaleFont};
     use imageproc::drawing::draw_text_mut;
+
+    let size = fit_scale(font, text, max_width, max_scale);
+    let scale = PxScale::from(size);
+    let scaled = font.as_scaled(scale);
+    let width: f32 = text.chars().map(|c| scaled.h_advance(font.glyph_id(c))).sum();
+    let x = ((img.width() as f32 - width) / 2.0).max(0.0) as i32;
+    // digits are about 0.73 em tall, put their middle on the middle of the icon
+    let baseline = img.height() as f32 / 2.0 + 0.365 * size;
+    let y = (baseline - scaled.ascent()).max(0.0) as i32;
+    draw_text_mut(img, color, x, y, scale, font, text);
+}
+
+fn render_icon(text: &str, text_mode: bool, charging: bool) -> Option<image::RgbaImage> {
+    use ab_glyph::FontRef;
+    use image::{ImageBuffer, Rgba};
 
     let width = 64;
     let height = 64;
@@ -209,15 +243,11 @@ fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
     let mut img = ImageBuffer::from_fn(width, height, |_, _| Rgba([0u8, 0u8, 0u8, 0u8]));
 
     let font_data = include_bytes!("../../assets/font/DejaVuSans.ttf");
-    let font = match FontRef::try_from_slice(font_data) {
-        Ok(f) => f,
-        Err(_) => {
-            return Icon {
-                width: width as i32,
-                height: height as i32,
-                data: vec![0u8; (width * height * 4) as usize],
-            };
-        }
+    let font = FontRef::try_from_slice(font_data).ok()?;
+    let color = if charging {
+        Rgba([0u8, 255u8, 0u8, 255u8])
+    } else {
+        Rgba([255u8, 255u8, 255u8, 255u8])
     };
     if !text_mode {
         let percentage = text.parse::<f32>().unwrap_or(0.0) / 100.0;
@@ -255,40 +285,25 @@ fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
                 }
             }
         }
-        if charging {
-            let emoji = "⚡";
-            let scale = PxScale::from(48.0);
-            let color = Rgba([0u8, 255u8, 0u8, 255u8]);
-            let scaled_font = font.as_scaled(scale);
-            let mut emoji_width = 0.0;
-            for c in emoji.chars() {
-                let glyph_id = font.glyph_id(c);
-                emoji_width += scaled_font.h_advance(glyph_id);
-            }
-            let x = ((width as f32 - emoji_width) / 2.0).max(0.0) as i32;
-            let y = ((height as f32 - scale.y) / 2.0).max(0.0) as i32;
-            draw_text_mut(&mut img, color, x, y, scale, &font, emoji);
-        }
+        // the level inside the ring, green while charging, inner diameter is 44
+        draw_centered_text(&mut img, &font, text, color, 40.0, 34.0);
     } else {
-        // battery text
-        let scale = PxScale::from(48.0);
-        let color = if charging {
-            Rgba([0u8, 255u8, 0u8, 255u8])
-        } else {
-            Rgba([255u8, 255u8, 255u8, 255u8])
-        };
-
-        let scaled_font = font.as_scaled(scale);
-        let mut text_width = 0.0;
-        for c in text.chars() {
-            let glyph_id = font.glyph_id(c);
-            text_width += scaled_font.h_advance(glyph_id);
-        }
-        let x = ((width as f32 - text_width) / 2.0).max(0.0) as i32;
-        let y = ((height as f32 - scale.y) / 2.0).max(0.0) as i32;
-
-        draw_text_mut(&mut img, color, x, y, scale, &font, text);
+        // battery text, kept inside the icon
+        draw_centered_text(&mut img, &font, text, color, 60.0, 48.0);
     }
+    Some(img)
+}
+
+fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
+    let width = 64;
+    let height = 64;
+    let Some(img) = render_icon(text, text_mode, charging) else {
+        return Icon {
+            width,
+            height,
+            data: vec![0u8; (width * height * 4) as usize],
+        };
+    };
 
     let mut data = Vec::with_capacity((width * height * 4) as usize);
     for pixel in img.pixels() {
@@ -299,8 +314,95 @@ fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
     }
 
     Icon {
-        width: width as i32,
-        height: height as i32,
+        width: width,
+        height: height,
         data,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ab_glyph::FontRef;
+
+    fn font() -> FontRef<'static> {
+        FontRef::try_from_slice(include_bytes!("../../assets/font/DejaVuSans.ttf")).unwrap()
+    }
+
+    fn count(img: &image::RgbaImage, inside: bool, pred: impl Fn(&image::Rgba<u8>) -> bool) -> usize {
+        img.enumerate_pixels()
+            .filter(|(x, y, p)| {
+                let (dx, dy) = (*x as f32 - 32.0, *y as f32 - 32.0);
+                let in_hole = (dx * dx + dy * dy).sqrt() <= 22.0;
+                in_hole == inside && pred(p)
+            })
+            .count()
+    }
+
+    fn white(p: &image::Rgba<u8>) -> bool {
+        p[3] > 200 && p[0] > 200 && p[1] > 200 && p[2] > 200
+    }
+
+    fn green(p: &image::Rgba<u8>) -> bool {
+        p[3] > 200 && p[0] < 60 && p[1] > 200 && p[2] < 60
+    }
+
+    #[test]
+    fn icon_is_a_64_by_64_argb_pixmap() {
+        let icon = generate_icon("94", false, false);
+        assert_eq!((icon.width, icon.height), (64, 64));
+        assert_eq!(icon.data.len(), 64 * 64 * 4);
+    }
+
+    #[test]
+    fn ring_mode_shows_the_level_inside_the_ring() {
+        let img = render_icon("94", false, false).unwrap();
+        assert!(count(&img, true, white) > 30, "no level drawn inside the ring");
+        assert!(count(&img, false, green) > 500, "ring lost its progress arc");
+    }
+
+    #[test]
+    fn charging_level_is_green() {
+        let img = render_icon("45", false, true).unwrap();
+        assert_eq!(count(&img, true, white), 0);
+        assert!(count(&img, true, green) > 30);
+    }
+
+    #[test]
+    fn three_digit_level_stays_inside_the_icon() {
+        for text_mode in [false, true] {
+            let img = render_icon("100", text_mode, false).unwrap();
+            for (x, _y, p) in img.enumerate_pixels() {
+                if p[3] > 0 {
+                    assert!((2..62).contains(&x), "pixel at column {} in text_mode={}", x, text_mode);
+                }
+            }
+            assert!(img.pixels().any(|p| p[3] > 0));
+        }
+    }
+
+    #[test]
+    fn fit_scale_only_shrinks_when_needed() {
+        let font = font();
+        assert_eq!(fit_scale(&font, "9", 40.0, 34.0), 34.0);
+        let shrunk = fit_scale(&font, "100", 40.0, 48.0);
+        assert!(shrunk < 48.0 && shrunk > 10.0);
+    }
+
+    // writes the icons as PNG files for a visual check: TRAY_ICON_DUMP=<dir> cargo test dump_tray_icons -- --ignored
+    #[test]
+    #[ignore]
+    fn dump_tray_icons() {
+        let Ok(dir) = std::env::var("TRAY_ICON_DUMP") else { return };
+        for (name, text, text_mode, charging) in [
+            ("ring-94", "94", false, false),
+            ("ring-100", "100", false, false),
+            ("ring-45-charging", "45", false, true),
+            ("ring-7", "7", false, false),
+            ("text-100", "100", true, false),
+            ("text-94", "94", true, false),
+        ] {
+            render_icon(text, text_mode, charging).unwrap().save(format!("{}/{}.png", dir, name)).unwrap();
+        }
     }
 }
